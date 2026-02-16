@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Mini App Penalty Game FIFA Style</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: 'Arial', sans-serif; margin: 0; background: linear-gradient(to bottom, #1e3c72, #2a5298); color: #fff; text-align: center; }
+.screen { display: none; padding: 10px 15px; min-height: 100vh; box-sizing: border-box; }
+.active { display: block; }
+button { padding: 12px 20px; margin: 10px; font-size: 16px; font-weight: bold; color: #fff; background: linear-gradient(45deg, #ff6b6b, #f06595); border: none; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); transition: transform 0.1s, box-shadow 0.1s; }
+button:active { transform: translateY(2px); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+#canvas-container { margin: 20px auto; width: 180px; height: 180px; background: linear-gradient(to bottom, #4CAF50, #2E7D32); border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+canvas { width: 100%; height: 100%; }
+#penalty-court { position: relative; width: 90%; max-width: 320px; height: 360px; margin: 20px auto; background: linear-gradient(to top, #4CAF50, #81C784); border-radius: 12px; border: 3px solid #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.5); overflow: hidden; }
+.ball { width: 24px; height: 24px; background: orange; border-radius: 50%; position: absolute; bottom: 20px; left: calc(50% - 12px); box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+.goalkeeper { width: 60px; height: 60px; background: red; position: absolute; top: 0; left: calc(50% - 30px); border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.5); transition: all 0.3s; }
+.role-btn { background: linear-gradient(45deg, #2196F3, #21CBF3); width: 45%; max-width: 140px; display: inline-block; margin: 5px; }
+#progress-text { background: rgba(0,0,0,0.4); padding: 12px; border-radius: 10px; display: inline-block; white-space: pre-line; }
+@media(max-width: 400px){ h2 { font-size: 20px; } p { font-size: 14px; } button { font-size: 14px; padding: 10px 16px; } .role-btn { width: 40%; max-width: 120px; } }
+</style>
+</head>
+<body>
+
+<div id="screen-onboarding" class="screen active">
+<h2>Зажми кнопку и скажи что-нибудь</h2>
+<p>Судьба выберет твою сборную</p>
+<button id="btn-hold">Удерживай</button>
+<p id="hold-msg"></p>
+</div>
+
+<div id="screen-result" class="screen">
+<h2>Твоя сборная:</h2>
+<p id="selected-team"></p>
+<div id="canvas-container">
+<canvas id="lionCanvas" width="180" height="180"></canvas>
+</div>
+<button id="btn-next-role">Выбрать роль</button>
+</div>
+
+<div id="screen-role" class="screen">
+<h2>Выбери позицию:</h2>
+<button class="role-btn" data-role="Нападающий">Нападающий</button>
+<button class="role-btn" data-role="Полузащитник">Полузащитник</button>
+<button class="role-btn" data-role="Защитник">Защитник</button>
+<p id="role-info"></p>
+</div>
+
+<div id="screen-penalty" class="screen">
+<h2>Пробей 3 пенальти!</h2>
+<div id="penalty-court">
+<div class="goalkeeper" id="goalkeeper"></div>
+<div class="ball" id="ball"></div>
+</div>
+<p>Выбери направление удара:</p>
+<button id="btn-shoot-left">Лево</button>
+<button id="btn-shoot-center">Центр</button>
+<button id="btn-shoot-right">Право</button>
+<p id="shot-result"></p>
+</div>
+
+<div id="screen-progress" class="screen">
+<h2>Прогресс</h2>
+<p id="progress-text"></p>
+<button id="btn-play-again">Сыграть снова</button>
+</div>
+
+<script>
+// Данные
+const teams=[{name:"Франция",color:"#0055A4",flag:"🇫🇷"},{name:"Аргентина",color:"#74ACDF",flag:"🇦🇷"},{name:"Бразилия",color:"#009C3B",flag:"🇧🇷"},{name:"Германия",color:"#000000",flag:"🇩🇪"},{name:"Испания",color:"#C60B1E",flag:"🇪🇸"},{name:"Англия",color:"#CF142B",flag:"🏴"},{name:"Италия",color:"#008C45",flag:"🇮🇹"},{name:"Португалия",color:"#006600",flag:"🇵🇹"}];
+const roleParams={"Нападающий":{accuracy:80,power:70,curve:20,crit:5},"Полузащитник":{accuracy:60,power:60,curve:30,crit:10},"Защитник":{accuracy:50,power:90,curve:10,crit:20}};
+
+// Состояние
+let selectedTeam=null, selectedRole='', totalGoals=0, sessionGoals=0, tickets=0, shotCount=0;
+
+// Canvas Лев
+const canvas=document.getElementById('lionCanvas'); const ctx=canvas.getContext('2d');
+function drawLion(teamColor='#FFD700',flag='',actionOffset=0){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle=teamColor; ctx.fillRect(80,120+actionOffset,40,50);
+  ctx.fillStyle='#FFA500'; ctx.beginPath(); ctx.arc(100,90+actionOffset,30,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#FF8C00';
+  for(let i=0;i<16;i++){let angle=(Math.PI*2/16)*i;let x=100+Math.cos(angle)*40;let y=90+Math.sin(angle)*40+actionOffset;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();}
+  ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(90,85+actionOffset,4,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(110,85+actionOffset,4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(90,100+actionOffset); ctx.quadraticCurveTo(100,110+actionOffset,110,100+actionOffset); ctx.stroke();
+  if(flag){ctx.font='20px Arial'; ctx.fillText(flag,90,150+actionOffset);}
+}
+
+// Онбординг
+const btnHold=document.getElementById('btn-hold'); let holdStart=0;
+function startHold(){ holdStart=Date.now(); document.getElementById('hold-msg').innerText='Удерживай...'; }
+function endHold(){ 
+  const duration=Date.now()-holdStart; document.getElementById('hold-msg').innerText='';
+  const index=Math.floor((duration+Math.random()*1000)%teams.length);
+  selectedTeam=teams[index];
+  document.getElementById('selected-team').innerText=selectedTeam.name;
+  drawLion(selectedTeam.color,selectedTeam.flag);
+  showScreen('screen-result');
+}
+btnHold.addEventListener('mousedown', startHold);
+btnHold.addEventListener('mouseup', endHold);
+btnHold.addEventListener('touchstart', startHold);
+btnHold.addEventListener('touchend', endHold);
+
+// Выбор роли
+document.querySelectorAll('.role-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    selectedRole=btn.dataset.role;
+    const p=roleParams[selectedRole];
+    document.getElementById('role-info').innerText=`Accuracy: ${p.accuracy}, Power: ${p.power}, Curve: ${p.curve}%, Crit: ${p.crit}%`;
+    sessionGoals=0; shotCount=0; showScreen('screen-penalty'); resetBall(); moveGoalkeeper();
+  });
+});
+
+// Пенальти
+function calcGoal(dir){const p=roleParams[selectedRole]; let chance=p.accuracy*0.5+p.power*0.3; const gkDir=['left','center','right'][Math.floor(Math.random()*3)]; if(dir===gkDir) chance-=40; if(Math.random()*100<p.crit) return true; return Math.random()*100<chance;}
+const ball=document.getElementById('ball'); const goalkeeper=document.getElementById('goalkeeper');
+function resetBall(){ball.style.left='calc(50% - 12px)'; ball.style.bottom='20px';}
+function moveGoalkeeper(){const dir=['left','center','right'][Math.floor(Math.random()*3)]; if(dir==='left') goalkeeper.style.left='80px'; if(dir==='center') goalkeeper.style.left='calc(50% - 30px)'; if(dir==='right') goalkeeper.style.left='160px'; return dir;}
+
+// Анимация удара и мяча
+function animateKick(direction,callback){
+  let offset=0; let startX=140, startY=20;
+  let targetX=direction==='left'?80:direction==='center'?140:200, targetY=300;
+  function frame(){
+    if(offset<1){
+      offset+=0.02;
+      drawLion(selectedTeam.color,selectedTeam.flag,-20*Math.sin(offset*Math.PI));
+      ball.style.left=startX+(targetX-startX)*offset+'px';
+      ball.style.bottom=startY+(targetY-startY)*offset+'px';
+      requestAnimationFrame(frame);
+    } else { drawLion(selectedTeam.color,selectedTeam.flag,0); callback(); resetBall(); }
+  }
+  frame();
+}
+
+// Кнопки удара
+document.getElementById('btn-shoot-left').addEventListener('click',()=>takeShot('left'));
+document.getElementById('btn-shoot-center').addEventListener('click',()=>takeShot('center'));
+document.getElementById('btn-shoot-right').addEventListener('click',()=>takeShot('right'));
+
+function takeShot(dir){
+  shotCount++; moveGoalkeeper();
+  animateKick(dir,()=>{
+    const goal=calcGoal(dir); document.getElementById('shot-result').innerText=goal?'Гол!':'Мимо/Сейв!';
+    if(goal) sessionGoals++;
+    if(shotCount>=3){
+      tickets+=sessionGoals>=4?1:0; totalGoals+=sessionGoals;
+      document.getElementById('progress-text').innerText=`Ты — ${selectedRole} сборной ${selectedTeam.name}.\nГолов за сессию: ${sessionGoals}\nВсего голов: ${totalGoals}\nБилеты: ${tickets}`;
+      showScreen('screen-progress');
+    }
+  });
+}
+
+// Навигация
+document.getElementById('btn-next-role').addEventListener('click',()=>showScreen('screen-role'));
+document.getElementById('btn-play-again').addEventListener('click',()=>showScreen('screen-onboarding'));
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+
+// Инициализация льва
+drawLion();
+</script>
+</body>
+</html>
