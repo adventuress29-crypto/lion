@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Lion Penalty Game</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { background:#111; color:white; text-align:center; font-family:sans-serif; }
+  #wheel { display:flex; justify-content:center; transition:transform 2s cubic-bezier(.2,.8,.2,1); margin:20px 0; }
+  .team-card { width:120px; margin:0 10px; text-align:center; }
+  .team-card img { width:80px; height:50px; }
+  .lion-container { position:relative; width:400px; margin:auto; }
+  .lion { width:400px; }
+  #kitLayer { position:absolute; top:0; left:0; width:400px; height:600px; }
+  canvas { background:#0b6623; margin-top:20px; }
+  button { padding:10px 20px; margin:10px; }
+</style>
+</head>
+<body>
+
+<h2>Крутите барабан сборных</h2>
+<button onclick="spinWheel()">Крутить барабан</button>
+<div id="wheel"></div>
+
+<div class="lion-container">
+  <img src="https://i.ibb.co/xSz9B9H/lion-base.png" class="lion">
+  <svg id="kitLayer"></svg>
+</div>
+
+<h3>Выберите роль:</h3>
+<button onclick="role='forward'">Нападающий</button>
+<button onclick="role='midfielder'">Полузащитник</button>
+<button onclick="role='defender'">Защитник</button>
+
+<h3>Пробей пенальти</h3>
+<canvas id="gameCanvas" width="400" height="300"></canvas>
+<p id="score"></p>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.expand();
+
+let currentTeam = null;
+let role = "forward";
+let attempts = 0;
+let goals = 0;
+
+// Конфигурация команд
+const teams = [
+  {name:"USA", flag:"https://i.ibb.co/xSz2Y4M/flag-usa.png", kit:{primary:"#fff", secondary:"#d30000", accent:"#002868"}},
+  {name:"Mexico", flag:"https://i.ibb.co/0jZ5QqX/flag-mexico.png", kit:{primary:"#006847", secondary:"#fff", accent:"#ce1126"}},
+  {name:"France", flag:"https://i.ibb.co/6NZsT6B/flag-france.png", kit:{primary:"#002395", secondary:"#fff", accent:"#ed2939"}}
+];
+
+// Рисуем барабан
+function renderWheel() {
+  const wheel = document.getElementById("wheel");
+  wheel.innerHTML="";
+  teams.forEach(t=>{
+    const div=document.createElement("div");
+    div.className="team-card";
+    div.innerHTML=`<img src="${t.flag}"><div>${t.name}</div>`;
+    wheel.appendChild(div);
+  });
+}
+renderWheel();
+
+function spinWheel() {
+  const index = Math.floor(Math.random() * teams.length);
+  const offset = index * 140;
+  document.getElementById("wheel").style.transform=`translateX(-${offset}px)`;
+  currentTeam = teams[index];
+  setTimeout(()=>applyKit(currentTeam), 2000);
+}
+
+function applyKit(team) {
+  const svg=document.getElementById("kitLayer");
+  svg.innerHTML=`
+    <rect x="120" y="220" width="160" height="200" fill="${team.kit.primary}"/>
+    <rect x="120" y="260" width="160" height="40" fill="${team.kit.secondary}"/>
+    <circle cx="200" cy="250" r="20" fill="${team.kit.accent}"/>
+  `;
+}
+
+// Роли
+function getRoleStats(role){
+  return {forward:{accuracy:85,power:75},midfielder:{accuracy:75,power:70},defender:{accuracy:60,power:85}}[role];
+}
+
+// Пенальти
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+canvas.addEventListener("click",e=>{
+  if(attempts>=3){alert("3 попытки завершены"); return;}
+  const rect=canvas.getBoundingClientRect();
+  const x=(e.clientX-rect.left)/canvas.width;
+  const y=(e.clientY-rect.top)/canvas.height;
+  shoot(x,y);
+});
+
+function shoot(x,y){
+  attempts++;
+  const stats=getRoleStats(role);
+  const spread=(100-stats.accuracy)/500;
+  const finalX=Math.max(0,Math.min(1,x+(Math.random()-0.5)*spread));
+  const finalY=Math.max(0,Math.min(1,y+(Math.random()-0.5)*spread));
+  const keeper={x:Math.random(),y:Math.random()*0.6};
+  const dx=finalX-keeper.x;
+  const dy=finalY-keeper.y;
+  const distance=Math.sqrt(dx*dx+dy*dy);
+  const saveRadius=0.18-stats.power/500;
+  const goal=distance>saveRadius;
+  if(goal) goals++;
+  animateShot(finalX,finalY,keeper,goal);
+}
+
+function animateShot(x,y,keeper,goal){
+  ctx.clearRect(0,0,400,300);
+  // Ворота
+  ctx.fillStyle="white";
+  ctx.fillRect(50,50,300,150);
+  // Вратарь
+  ctx.fillStyle="blue";
+  ctx.beginPath();
+  ctx.arc(50+keeper.x*300,50+keeper.y*150,15,0,Math.PI*2);
+  ctx.fill();
+  // Мяч
+  ctx.fillStyle=goal?"yellow":"red";
+  ctx.beginPath();
+  ctx.arc(50+x*300,50+y*150,10,0,Math.PI*2);
+  ctx.fill();
+  document.getElementById("score").innerText=`Попытки: ${attempts} | Голы: ${goals}`;
+}
+</script>
+</body>
+</html>
